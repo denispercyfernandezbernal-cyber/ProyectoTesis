@@ -95,6 +95,21 @@ CREATE TABLE IF NOT EXISTS docente_asignaciones (
     )
 );
 
+-- Tabla de matrículas de alumnos en materias (solo para SECUNDARIA)
+-- Permite validar que un alumno está matriculado en una materia antes de registrar asistencia
+CREATE TABLE IF NOT EXISTS alumno_materias (
+    id SERIAL PRIMARY KEY,
+    alumno_id INTEGER NOT NULL REFERENCES alumnos(id),
+    materia_id INTEGER NOT NULL REFERENCES materias(id),
+    grado_seccion_id INTEGER NOT NULL REFERENCES grado_seccion(id),
+    nivel VARCHAR(20) NOT NULL CHECK (nivel = 'SECUNDARIA'),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    deleted_at TIMESTAMP NULL,
+    -- Un alumno solo puede estar matriculado una vez en una materia en un grado-sección
+    UNIQUE(alumno_id, materia_id, grado_seccion_id)
+);
+
 -- Tabla de asistencias de alumnos
 CREATE TABLE IF NOT EXISTS asistencias (
     id SERIAL PRIMARY KEY,
@@ -134,6 +149,9 @@ CREATE INDEX IF NOT EXISTS idx_alumnos_codigo_estudiante ON alumnos(codigo_estud
 CREATE INDEX IF NOT EXISTS idx_alumnos_grado_seccion ON alumnos(grado_seccion_id);
 CREATE INDEX IF NOT EXISTS idx_docente_asignaciones_docente ON docente_asignaciones(docente_id);
 CREATE INDEX IF NOT EXISTS idx_docente_asignaciones_grado_seccion ON docente_asignaciones(grado_seccion_id);
+CREATE INDEX IF NOT EXISTS idx_alumno_materias_alumno ON alumno_materias(alumno_id);
+CREATE INDEX IF NOT EXISTS idx_alumno_materias_materia ON alumno_materias(materia_id);
+CREATE INDEX IF NOT EXISTS idx_alumno_materias_grado_seccion ON alumno_materias(grado_seccion_id);
 -- Índices únicos para evitar duplicados en asignaciones
 -- Para primaria: solo docente_id + grado_seccion_id (materia_id es NULL)
 CREATE UNIQUE INDEX IF NOT EXISTS idx_docente_asignaciones_unique_primaria 
@@ -231,6 +249,9 @@ CREATE TRIGGER update_alumnos_updated_at BEFORE UPDATE ON alumnos
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 CREATE TRIGGER update_docente_asignaciones_updated_at BEFORE UPDATE ON docente_asignaciones
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_alumno_materias_updated_at BEFORE UPDATE ON alumno_materias
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 CREATE TRIGGER update_asistencias_updated_at BEFORE UPDATE ON asistencias

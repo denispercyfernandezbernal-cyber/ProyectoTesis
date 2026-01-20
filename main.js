@@ -93,7 +93,20 @@ app.post("/login", async (req, res) => {
     }
 
     const user = result.rows[0];
-    const match = await bcrypt.compare(password, user.password_hash);
+    
+    // Verificar que el hash existe y no está vacío
+    if (!user.password_hash || user.password_hash.trim() === '') {
+      return res.status(401).json({ error: "Contraseña no configurada" });
+    }
+    
+    // Comparar contraseña con hash
+    let match;
+    try {
+      match = await bcrypt.compare(password, user.password_hash);
+    } catch (bcryptError) {
+      console.error("Error en bcrypt.compare:", bcryptError);
+      return res.status(500).json({ error: "Error al verificar contraseña", details: bcryptError.message });
+    }
 
     if (!match) {
       return res.status(401).json({ error: "Credenciales inválidas" });
@@ -255,6 +268,22 @@ app.post("/docente/tomar-asistencia", verifyToken, verifyDocente, async (req, re
       return res.status(400).json({ 
         error: "El alumno no pertenece al grado-sección seleccionado" 
       });
+    }
+
+    // Para SECUNDARIA: Validar que el alumno está matriculado en la materia
+    if (nivel === "SECUNDARIA") {
+      const matriculaQuery = await pool.query(
+        `SELECT id FROM alumno_materias 
+         WHERE alumno_id = $1 AND materia_id = $2 AND grado_seccion_id = $3 
+         AND nivel = 'SECUNDARIA' AND deleted_at IS NULL`,
+        [alumno.id, materia_id, grado_seccion_id]
+      );
+
+      if (matriculaQuery.rows.length === 0) {
+        return res.status(400).json({ 
+          error: "El alumno no está matriculado en esta materia" 
+        });
+      }
     }
 
     // Obtener fecha y hora actual
@@ -422,6 +451,84 @@ app.post("/director/tomar-asistencia-docente", verifyToken, verifyDirector, asyn
 // ============================================
 // INICIO DEL SERVIDOR
 // ============================================
+
+// Endpoint temporal para generar hash de contraseña (SOLO PARA DESARROLLO)
+// ELIMINAR EN PRODUCCIÓN
+app.post("/generate-hash", async (req, res) => {
+  try {
+    const { password } = req.body;
+    if (!password) {
+      return res.status(400).json({ error: "Debe proporcionar una contraseña" });
+    }
+    
+    // Generar hash con salt rounds = 10
+    const hash = await bcrypt.hash(password, 10);
+    
+    // Verificar que el hash funciona comparándolo
+    const verify = await bcrypt.compare(password, hash);
+    
+    res.json({ 
+      password, 
+      hash,
+      verified: verify,
+      hash_length: hash.length,
+      hash_preview: hash.substring(0, 20) + "...",
+      sql_update: `UPDATE usuarios SET password_hash = '${hash}' WHERE deleted_at IS NULL;`
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message, stack: error.stack });
+  }
+});
+
+// Endpoint de debug para verificar usuario y hash (SOLO PARA DESARROLLO)
+// ELIMINAR EN PRODUCCIÓN
+app.post("/debug-user", async (req, res) => {
+  try {
+    const { dni, password } = req.body;
+    if (!dni) {
+      return res.status(400).json({ error: "Debe proporcionar un DNI" });
+    }
+
+    const result = await pool.query(
+      "SELECT id, dni, nombres_completos, cargo, nivel, password_hash, deleted_at FROM usuarios WHERE dni = $1",
+      [dni]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Usuario no encontrado" });
+    }
+
+    const user = result.rows[0];
+    let match = null;
+    let matchResult = false;
+
+    if (password) {
+      match = await bcrypt.compare(password, user.password_hash);
+      matchResult = match;
+    }
+
+    res.json({
+      usuario: {
+        id: user.id,
+        dni: user.dni,
+        nombres_completos: user.nombres_completos,
+        cargo: user.cargo,
+        nivel: user.nivel,
+        deleted_at: user.deleted_at,
+        hash_length: user.password_hash ? user.password_hash.length : 0,
+        hash_preview: user.password_hash ? user.password_hash.substring(0, 30) + "..." : null,
+        hash_starts_with: user.password_hash ? user.password_hash.substring(0, 7) : null
+      },
+      password_provided: !!password,
+      password_match: matchResult,
+      message: password 
+        ? (matchResult ? "✅ La contraseña es correcta" : "❌ La contraseña NO coincide") 
+        : "No se proporcionó contraseña para verificar"
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
 const port = process.env.PORT || 3000;
 app.listen(port, () => {
