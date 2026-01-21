@@ -7,6 +7,21 @@ require("dotenv").config();
 const app = express();
 app.use(express.json());
 
+// ============================================
+// HELPER: Obtener fecha y hora en zona horaria de Perú (America/Lima)
+// ============================================
+async function getPeruDateTime(pool) {
+  const result = await pool.query(
+    `SELECT 
+      TO_CHAR(NOW() AT TIME ZONE 'America/Lima', 'YYYY-MM-DD') as fecha,
+      TO_CHAR(NOW() AT TIME ZONE 'America/Lima', 'HH24:MI:SS') as hora`
+  );
+  return {
+    fecha: result.rows[0].fecha,
+    hora: result.rows[0].hora
+  };
+}
+
 // Configuración de conexión a PostgreSQL
 const pool = new Pool({
   host: process.env.PGHOST || "localhost",
@@ -286,9 +301,8 @@ app.post("/docente/tomar-asistencia", verifyToken, verifyDocente, async (req, re
       }
     }
 
-    // Obtener fecha y hora actual
-    const fecha = new Date().toISOString().split("T")[0];
-    const hora = new Date().toTimeString().split(" ")[0];
+    // Obtener fecha y hora actual en zona horaria de Perú
+    const { fecha, hora } = await getPeruDateTime(pool);
 
     // Verificar que no exista asistencia para este día
     let existenciaQuery;
@@ -351,6 +365,58 @@ app.post("/docente/tomar-asistencia", verifyToken, verifyDocente, async (req, re
   }
 });
 
+// Obtener contador de asistencias del día actual
+app.get("/docente/contador-asistencias", verifyToken, verifyDocente, async (req, res) => {
+  try {
+    const { grado_seccion_id, materia_id } = req.query;
+    const docenteId = req.user.id;
+    const nivel = req.user.nivel;
+
+    if (!grado_seccion_id) {
+      return res.status(400).json({ error: "Debe proporcionar el grado-sección" });
+    }
+
+    // Obtener fecha actual en zona horaria de Perú
+    const { fecha } = await getPeruDateTime(pool);
+
+    let countQuery;
+    if (nivel === "PRIMARIA") {
+      countQuery = await pool.query(
+        `SELECT COUNT(*) as total
+         FROM asistencias 
+         WHERE docente_id = $1 
+           AND grado_seccion_id = $2 
+           AND materia_id IS NULL 
+           AND fecha = $3`,
+        [docenteId, grado_seccion_id, fecha]
+      );
+    } else {
+      if (!materia_id) {
+        return res.status(400).json({ error: "Debe proporcionar la materia para nivel secundaria" });
+      }
+      countQuery = await pool.query(
+        `SELECT COUNT(*) as total
+         FROM asistencias 
+         WHERE docente_id = $1 
+           AND grado_seccion_id = $2 
+           AND materia_id = $3 
+           AND fecha = $4`,
+        [docenteId, grado_seccion_id, materia_id, fecha]
+      );
+    }
+
+    const total = parseInt(countQuery.rows[0].total);
+
+    res.json({
+      total: total,
+      fecha: fecha
+    });
+  } catch (err) {
+    console.error("Error al obtener contador de asistencias:", err);
+    res.status(500).json({ error: "Error al obtener contador de asistencias" });
+  }
+});
+
 // ============================================
 // PERFIL DIRECTOR
 // ============================================
@@ -404,9 +470,8 @@ app.post("/director/tomar-asistencia-docente", verifyToken, verifyDirector, asyn
 
     const docente = docenteResult.rows[0];
 
-    // Obtener fecha actual
-    const fecha = new Date().toISOString().split("T")[0];
-    const hora = new Date().toTimeString().split(" ")[0];
+    // Obtener fecha y hora actual en zona horaria de Perú
+    const { fecha, hora } = await getPeruDateTime(pool);
 
     // Verificar que no exista asistencia para este día
     const existenciaQuery = await pool.query(
@@ -454,11 +519,20 @@ app.post("/director/tomar-asistencia-docente", verifyToken, verifyDirector, asyn
 
 // Endpoint temporal para generar hash de contraseña (SOLO PARA DESARROLLO)
 // ELIMINAR EN PRODUCCIÓN
-app.post("/generate-hash", async (req, res) => {
+app.post("/generate-hash", express.json(), async (req, res) => {
   try {
-    const { password } = req.body;
+    // Verificar que req.body existe
+    if (!req.body) {
+      return res.status(400).json({ error: "No se recibieron datos en el body" });
+    }
+    
+    const password = req.body?.password || req.body?.pass || null;
     if (!password) {
-      return res.status(400).json({ error: "Debe proporcionar una contraseña" });
+      return res.status(400).json({ 
+        error: "Debe proporcionar una contraseña",
+        hint: "Enviar: { \"password\": \"123\" }",
+        received: req.body
+      });
     }
     
     // Generar hash con salt rounds = 10
