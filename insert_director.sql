@@ -3,13 +3,20 @@
 -- I.E. N° 16793 "EULALIO VILLEGAS RAMOS"
 -- ============================================
 -- Contraseña: 123
--- Hash bcrypt de "123": $2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy
+-- Hash bcrypt de "123": $2b$10$urPccXe7RGSaTXII005lXOJJ63Pv9s6mgujunN1yBPfWdzPrDExby
 
 -- Insertar Director
 INSERT INTO usuarios (dni, nombres_completos, nivel, cargo, condicion, jornada_laboral, password_hash)
 VALUES
-    ('99999999', 'DIRECTOR GENERAL', 'PRIMARIA', 'DIRECTOR', 'Nombrado', 'Completa', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy')
-ON CONFLICT (dni) DO NOTHING;
+    ('43019139', 'VASQUEZ OLANO JOSE LUIS', 'PRIMARIA', 'DIRECTOR', 'DESIGNADO', '40', '$2b$10$urPccXe7RGSaTXII005lXOJJ63Pv9s6mgujunN1yBPfWdzPrDExby')
+ON CONFLICT (dni) DO UPDATE SET
+    nombres_completos = EXCLUDED.nombres_completos,
+    nivel = EXCLUDED.nivel,
+    cargo = EXCLUDED.cargo,
+    condicion = EXCLUDED.condicion,
+    jornada_laboral = EXCLUDED.jornada_laboral,
+    password_hash = EXCLUDED.password_hash,
+    updated_at = CURRENT_TIMESTAMP;
 
 -- Verificar que se insertó correctamente
 SELECT 

@@ -539,6 +539,42 @@ app.post("/director/tomar-asistencia-docente", verifyToken, verifyDirector, asyn
   }
 });
 
+// Obtener contador de asistencias de docentes del día actual
+app.get("/director/contador-asistencias-docentes", verifyToken, verifyDirector, async (req, res) => {
+  try {
+    // Obtener fecha actual en zona horaria de Perú
+    const { fecha } = await getPeruDateTime(pool);
+
+    // Contar docentes con asistencia registrada hoy
+    const countQuery = await pool.query(
+      `SELECT COUNT(*) as total
+       FROM asistencias_docentes 
+       WHERE fecha = $1`,
+      [fecha]
+    );
+
+    const total = parseInt(countQuery.rows[0].total);
+
+    // Obtener el total de docentes activos
+    const totalTeachersQuery = await pool.query(
+      `SELECT COUNT(*) as total
+       FROM usuarios 
+       WHERE cargo = 'DOCENTE' AND deleted_at IS NULL`,
+      []
+    );
+
+    const totalTeachers = parseInt(totalTeachersQuery.rows[0].total);
+
+    res.json({
+      total: total,
+      totalTeachers: totalTeachers
+    });
+  } catch (err) {
+    console.error("Error al obtener contador de asistencias de docentes:", err);
+    res.status(500).json({ error: "Error al obtener contador de asistencias de docentes" });
+  }
+});
+
 // ============================================
 // INICIO DEL SERVIDOR
 // ============================================
