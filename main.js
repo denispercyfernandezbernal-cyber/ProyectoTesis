@@ -575,6 +575,130 @@ app.get("/director/contador-asistencias-docentes", verifyToken, verifyDirector, 
   }
 });
 
+// Generar reporte de asistencias de docentes
+app.get("/director/reporte-docentes", verifyToken, verifyDirector, async (req, res) => {
+  try {
+    const { mes, anio, dia_inicio, dia_fin } = req.query;
+
+    if (!mes || !anio || !dia_inicio || !dia_fin) {
+      return res.status(400).json({ error: "Debe proporcionar mes, año, día inicio y día fin" });
+    }
+
+    const mesNum = parseInt(mes);
+    const anioNum = parseInt(anio);
+    const diaInicio = parseInt(dia_inicio);
+    const diaFin = parseInt(dia_fin);
+
+    if (mesNum < 1 || mesNum > 12) {
+      return res.status(400).json({ error: "Mes inválido" });
+    }
+
+    if (diaInicio < 1 || diaInicio > 31 || diaFin < 1 || diaFin > 31 || diaInicio > diaFin) {
+      return res.status(400).json({ error: "Rango de días inválido" });
+    }
+
+    // Construir rango de fechas
+    const fechaInicio = `${anioNum}-${String(mesNum).padStart(2, '0')}-${String(diaInicio).padStart(2, '0')}`;
+    const fechaFin = `${anioNum}-${String(mesNum).padStart(2, '0')}-${String(diaFin).padStart(2, '0')}`;
+
+    // Obtener todos los docentes activos
+    const docentesQuery = await pool.query(
+      `SELECT 
+        id,
+        dni,
+        nombres_completos,
+        nivel,
+        cargo,
+        condicion,
+        jornada_laboral
+       FROM usuarios 
+       WHERE cargo = 'DOCENTE' AND deleted_at IS NULL
+       ORDER BY nombres_completos`,
+      []
+    );
+
+    const docentes = docentesQuery.rows;
+    const reporte = [];
+
+    // Para cada docente, obtener sus asistencias en el rango de fechas
+    for (const docente of docentes) {
+      const asistenciasQuery = await pool.query(
+        `SELECT fecha, hora, tipo
+         FROM asistencias_docentes 
+         WHERE docente_id = $1 
+           AND fecha >= $2 
+           AND fecha <= $3
+         ORDER BY fecha`,
+        [docente.id, fechaInicio, fechaFin]
+      );
+
+      const asistencias = {};
+      asistenciasQuery.rows.forEach(asist => {
+        const dia = new Date(asist.fecha).getDate();
+        asistencias[dia] = {
+          tipo: asist.tipo,
+          hora: asist.hora
+        };
+      });
+
+      // Calcular totales
+      const totalAsistencias = asistenciasQuery.rows.length;
+      const diasLaborables = diaFin - diaInicio + 1;
+
+      reporte.push({
+        docente: {
+          id: docente.id,
+          dni: docente.dni,
+          nombres_completos: docente.nombres_completos,
+          nivel: docente.nivel,
+          cargo: docente.cargo,
+          condicion: docente.condicion || '',
+          jornada_laboral: docente.jornada_laboral || ''
+        },
+        asistencias: asistencias,
+        totales: {
+          dias_laborados: totalAsistencias,
+          dias_laborables: diasLaborables,
+          inasistencias_injustificadas: 0,
+          tardanzas: 0,
+          inasistencias_justificadas: 0
+        }
+      });
+    }
+
+    // Obtener información de la institución (si existe en alguna tabla de configuración)
+    // Por ahora, valores por defecto
+    const infoInstitucion = {
+      dre_ugel: "UTCUBAMBA",
+      codigo_ie: "16793",
+      nombre_ie: "EULALIO VILLEGAS RAMOS",
+      lugar: "SIEMPRE VIVA"
+    };
+
+    // Nombres de meses en español
+    const meses = [
+      "ENERO", "FEBRERO", "MARZO", "ABRIL", "MAYO", "JUNIO",
+      "JULIO", "AGOSTO", "SEPTIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE"
+    ];
+
+    res.json({
+      info_institucion: infoInstitucion,
+      periodo: {
+        mes: meses[mesNum - 1],
+        anio: anioNum,
+        dia_inicio: diaInicio,
+        dia_fin: diaFin,
+        fecha_inicio: fechaInicio,
+        fecha_fin: fechaFin
+      },
+      docentes: reporte
+    });
+  } catch (err) {
+    console.error("Error al generar reporte de docentes:", err);
+    res.status(500).json({ error: "Error al generar reporte de docentes" });
+  }
+});
+
 // ============================================
 // INICIO DEL SERVIDOR
 // ============================================
