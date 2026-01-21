@@ -407,8 +407,34 @@ app.get("/docente/contador-asistencias", verifyToken, verifyDocente, async (req,
 
     const total = parseInt(countQuery.rows[0].total);
 
+    // Obtener el total de alumnos
+    let totalStudentsQuery;
+    if (nivel === "PRIMARIA") {
+      totalStudentsQuery = await pool.query(
+        `SELECT COUNT(*) as total
+         FROM alumnos 
+         WHERE grado_seccion_id = $1 
+           AND deleted_at IS NULL
+           AND estado_matricula != 'TRASLADADO'`,
+        [grado_seccion_id]
+      );
+    } else {
+      // Para secundaria: contar alumnos matriculados en la materia
+      totalStudentsQuery = await pool.query(
+        `SELECT COUNT(*) as total
+         FROM alumno_materias 
+         WHERE grado_seccion_id = $1 
+           AND materia_id = $2 
+           AND deleted_at IS NULL`,
+        [grado_seccion_id, materia_id]
+      );
+    }
+
+    const totalStudents = parseInt(totalStudentsQuery.rows[0].total);
+
     res.json({
       total: total,
+      totalStudents: totalStudents,
       fecha: fecha
     });
   } catch (err) {
