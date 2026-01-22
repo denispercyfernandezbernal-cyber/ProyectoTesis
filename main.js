@@ -127,6 +127,11 @@ app.post("/login", async (req, res) => {
       return res.status(401).json({ error: "Credenciales inválidas" });
     }
 
+    // Verificar que el usuario puede iniciar sesión (solo DOCENTE y DIRECTOR)
+    if (user.cargo !== 'DOCENTE' && user.cargo !== 'DIRECTOR') {
+      return res.status(403).json({ error: "Este tipo de usuario no puede iniciar sesión" });
+    }
+
     if (!process.env.JWT_SECRET) {
       console.warn("⚠️  JWT_SECRET no definido, usando clave por defecto");
     }
@@ -447,7 +452,7 @@ app.get("/docente/contador-asistencias", verifyToken, verifyDocente, async (req,
 // PERFIL DIRECTOR
 // ============================================
 
-// Listado de docentes
+// Listado de docentes (incluye también personal de limpieza)
 app.get("/director/docentes", verifyToken, verifyDirector, async (req, res) => {
   try {
     const result = await pool.query(
@@ -456,11 +461,12 @@ app.get("/director/docentes", verifyToken, verifyDirector, async (req, res) => {
         dni,
         nombres_completos,
         nivel,
+        cargo,
         condicion,
         jornada_laboral
       FROM usuarios 
-      WHERE cargo = 'DOCENTE' AND deleted_at IS NULL
-      ORDER BY nombres_completos`
+      WHERE (cargo = 'DOCENTE' OR cargo = 'PERSONAL_LIMPIEZA') AND deleted_at IS NULL
+      ORDER BY cargo, nombres_completos`
     );
 
     res.json({
@@ -482,16 +488,16 @@ app.post("/director/tomar-asistencia-docente", verifyToken, verifyDirector, asyn
       return res.status(400).json({ error: "Debe proporcionar el DNI del docente" });
     }
 
-    // Buscar docente por DNI
+    // Buscar docente o personal de limpieza por DNI
     const docenteResult = await pool.query(
-      `SELECT id, dni, nombres_completos 
+      `SELECT id, dni, nombres_completos, cargo
        FROM usuarios 
-       WHERE dni = $1 AND cargo = 'DOCENTE' AND deleted_at IS NULL`,
+       WHERE dni = $1 AND (cargo = 'DOCENTE' OR cargo = 'PERSONAL_LIMPIEZA') AND deleted_at IS NULL`,
       [dni_docente]
     );
 
     if (docenteResult.rows.length === 0) {
-      return res.status(404).json({ error: "Docente no encontrado" });
+      return res.status(404).json({ error: "Docente o personal de limpieza no encontrado" });
     }
 
     const docente = docenteResult.rows[0];
@@ -555,11 +561,11 @@ app.get("/director/contador-asistencias-docentes", verifyToken, verifyDirector, 
 
     const total = parseInt(countQuery.rows[0].total);
 
-    // Obtener el total de docentes activos
+    // Obtener el total de docentes y personal de limpieza activos
     const totalTeachersQuery = await pool.query(
       `SELECT COUNT(*) as total
        FROM usuarios 
-       WHERE cargo = 'DOCENTE' AND deleted_at IS NULL`,
+       WHERE (cargo = 'DOCENTE' OR cargo = 'PERSONAL_LIMPIEZA') AND deleted_at IS NULL`,
       []
     );
 
@@ -601,7 +607,7 @@ app.get("/director/reporte-docentes", verifyToken, verifyDirector, async (req, r
     const fechaInicio = `${anioNum}-${String(mesNum).padStart(2, '0')}-${String(diaInicio).padStart(2, '0')}`;
     const fechaFin = `${anioNum}-${String(mesNum).padStart(2, '0')}-${String(diaFin).padStart(2, '0')}`;
 
-    // Obtener todos los docentes activos
+    // Obtener todos los docentes y personal de limpieza activos
     const docentesQuery = await pool.query(
       `SELECT 
         id,
@@ -612,8 +618,8 @@ app.get("/director/reporte-docentes", verifyToken, verifyDirector, async (req, r
         condicion,
         jornada_laboral
        FROM usuarios 
-       WHERE cargo = 'DOCENTE' AND deleted_at IS NULL
-       ORDER BY nombres_completos`,
+       WHERE (cargo = 'DOCENTE' OR cargo = 'PERSONAL_LIMPIEZA') AND deleted_at IS NULL
+       ORDER BY cargo, nombres_completos`,
       []
     );
 
