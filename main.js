@@ -235,7 +235,8 @@ app.get("/docente/materias-grados", verifyToken, verifyDocente, async (req, res)
 // Toma de asistencia (docente)
 app.post("/docente/tomar-asistencia", verifyToken, verifyDocente, async (req, res) => {
   try {
-    const { codigo_qr, grado_seccion_id, materia_id } = req.body;
+    const { codigo_qr: codigoQrRaw, grado_seccion_id, materia_id } = req.body;
+    const codigo_qr = typeof codigoQrRaw === 'string' ? codigoQrRaw.trim() : codigoQrRaw;
     const docenteId = req.user.id;
     const nivel = req.user.nivel;
 
@@ -481,7 +482,8 @@ app.get("/director/docentes", verifyToken, verifyDirector, async (req, res) => {
 // Toma de asistencia de docentes (director)
 app.post("/director/tomar-asistencia-docente", verifyToken, verifyDirector, async (req, res) => {
   try {
-    const { dni_docente } = req.body;
+    const { dni_docente: dniDocenteRaw } = req.body;
+    const dni_docente = typeof dniDocenteRaw === 'string' ? dniDocenteRaw.trim() : dniDocenteRaw;
     const directorId = req.user.id;
 
     if (!dni_docente) {
